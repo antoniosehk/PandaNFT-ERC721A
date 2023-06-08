@@ -7,11 +7,12 @@
 const hre = require("hardhat");
 
 async function main() {
+  const OWNER = "0xcfC55DF43fB52CC8a6107AFb74798054Aa11f5c4";
   const [deployer] = await ethers.getSigners();
 
   console.log("Deploying contracts with the account:", deployer.address);
   const PandaNFT = await hre.ethers.getContractFactory("PandaNFT");
-  const pandaNFT = await PandaNFT.deploy();
+  const pandaNFT = await PandaNFT.deploy(OWNER);
 
   await pandaNFT.deployed();
 
