@@ -5,29 +5,42 @@ import "erc721a/contracts/ERC721A.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
+interface IVRFv2Consumer {
+    function requestRandomWords() external returns (uint256 requestId);
+
+    function getRequestStatus(
+        uint256 _requestId
+    ) external view returns (bool fulfilled, uint256[] memory randomWords);
+}
+
 contract PandaNFT is ERC721A, Ownable {
     uint256 public constant MAX_SUPPLY = 100;
     uint256 public MINT_FEE = 0.001 ether;
+    uint256 public constant MINT_FEE_RANDOM = 0.01 ether;
     uint256 public constant MINT_FEE_INCREMENT = 0.0001 ether;
+    address vRFV2ConsumerAddress;
 
     // the white list is for address that can increase mint fee
     mapping(address => bool) public whiteListAddress;
 
-    bool public tokenModeFlag = true;
+    mapping(address => uint256) public addressToRequestId;
+    mapping(uint256 => bool) public claimed;
 
-    string public defTokenURI =
-        "ipfs://QmZjDXmuLnEbAvU3KWB2G49SDhnVArkF2hkCcMJPek9wh3";
     string public baseTokenURI =
         "ipfs://QmeoQLPC9bYmTxUMoYvucEy5oreScmv3Zdo1AdSgqkV6qR/";
 
     event NewMint(address indexed msgSender, uint256 indexed mintQuantity);
 
-    constructor(address _owner) ERC721A("PandaNFT", "Panda") {
+    constructor(
+        address _owner,
+        address _vRFV2ConsumerAddress
+    ) ERC721A("PandaNFT", "Panda") {
         transferOwnership(_owner);
+        vRFV2ConsumerAddress = _vRFV2ConsumerAddress;
     }
 
-    function setTokenModeFlag(bool _flag) external onlyOwner {
-        tokenModeFlag = _flag;
+    function setVRFV2ConsumerAddress(address _address) external onlyOwner {
+        vRFV2ConsumerAddress = _address;
     }
 
     function setWhiteListAddress(
@@ -57,10 +70,6 @@ contract PandaNFT is ERC721A, Ownable {
         return super.supportsInterface(interfaceId);
     }
 
-    function updateDefTokenURI(string calldata _tokenURI) external onlyOwner {
-        defTokenURI = _tokenURI;
-    }
-
     function updateBaseTokenURI(string calldata _tokenURI) external onlyOwner {
         baseTokenURI = _tokenURI;
     }
@@ -76,18 +85,12 @@ contract PandaNFT is ERC721A, Ownable {
     function tokenURI(
         uint256 tokenId
     ) public view override returns (string memory) {
-        if (!tokenModeFlag) {
-            return defTokenURI;
-        } else {
-            require(
-                _exists(tokenId),
-                "ERC721Metadata: URI query for nonexistent token"
-            );
-            return
-                string(
-                    abi.encodePacked(baseTokenURI, Strings.toString(tokenId))
-                );
-        }
+        require(
+            _exists(tokenId),
+            "ERC721Metadata: URI query for nonexistent token"
+        );
+        return
+            string(abi.encodePacked(baseTokenURI, Strings.toString(tokenId)));
     }
 
     function mint(uint256 quantity) external payable {
@@ -107,5 +110,45 @@ contract PandaNFT is ERC721A, Ownable {
         _safeMint(msg.sender, quantity);
 
         emit NewMint(msg.sender, quantity);
+    }
+
+    function randomMint() external payable {
+        require(
+            totalSupply() + 10 <= MAX_SUPPLY,
+            "ERC721: Exceeds maximum supply"
+        );
+        require(msg.value >= MINT_FEE_RANDOM, "ERC721: Insufficient payment");
+        uint256 requestId = IVRFv2Consumer(vRFV2ConsumerAddress)
+            .requestRandomWords();
+        addressToRequestId[msg.sender] = requestId;
+    }
+
+    function checkIfRandomMintEligible(
+        address _address
+    ) public view returns (bool) {
+        uint256 requestId = addressToRequestId[_address];
+        if (requestId == 0) return false;
+        (bool fulfilled, uint256[] memory randomWords) = IVRFv2Consumer(
+            vRFV2ConsumerAddress
+        ).getRequestStatus(requestId);
+        if (!fulfilled) return false;
+        if (randomWords[0] % 2 == 1) return false;
+        if (claimed[requestId]) return false;
+
+        return true;
+    }
+
+    function claim() external {
+        require(
+            totalSupply() + 10 <= MAX_SUPPLY,
+            "ERC721: Exceeds maximum supply"
+        );
+
+        require(checkIfRandomMintEligible(msg.sender), "You are not eligible");
+
+        uint256 requestId = addressToRequestId[msg.sender];
+        claimed[requestId] = true;
+        _safeMint(msg.sender, 10);
+        emit NewMint(msg.sender, 10);
     }
 }
