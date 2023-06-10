@@ -47,4 +47,4 @@ npx hardhat run scripts/deploy deploy.js
 ```
 
 ## Reference
- - [https://github.com/antoniosehk/PandaNFT-ERC721A](https://github.com/antoniosehk/PandaNFT-ERC721A)
+ - [https://github.com/antoniosehk/PandaNFT-Frontend](https://github.com/antoniosehk/PandaNFT-Frontend)
